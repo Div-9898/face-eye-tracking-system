@@ -44,7 +44,7 @@ A real-time face and eye tracking application built with Python, Streamlit, and 
 
 1. Clone the repository:
 ```bash
-git clone https://github.com/yourusername/face-eye-tracking-system.git
+git clone https://github.com/Div-9898/face-eye-tracking-system.git
 cd face-eye-tracking-system
 ```
 
@@ -157,11 +157,9 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 ## 📞 Contact
 
-Your Name - [@yourusername](https://twitter.com/yourusername)
+GitHub: [@Div-9898](https://github.com/Div-9898)
 
-Project Link: [https://github.com/yourusername/face-eye-tracking-system](https://github.com/yourusername/face-eye-tracking-system)
-
-> **Note**: Remember to update the contact information and repository URLs with your actual GitHub username and details!
+Project Link: [https://github.com/Div-9898/face-eye-tracking-system](https://github.com/Div-9898/face-eye-tracking-system)
 
 ---
 
