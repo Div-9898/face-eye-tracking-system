@@ -144,8 +144,16 @@ You can also deploy this app on Streamlit Cloud for free:
 2. Sign up for [Streamlit Cloud](https://streamlit.io/cloud)
 3. Click "New app" and select your forked repository
 4. Choose `streamlit_app.py` as the main file
-5. **IMPORTANT**: Click "Advanced settings" and select **Python 3.11**
+5. **⚠️ CRITICAL**: Click "Advanced settings" and select **Python 3.11** from the dropdown
+   - MediaPipe does NOT support Python 3.13+ yet
+   - You MUST select Python 3.11 or the deployment will fail
 6. Click "Deploy"
+
+**🔧 If you already deployed and it's failing:**
+1. Go to your app dashboard on Streamlit Cloud
+2. Click the three dots menu (⋮) → Settings
+3. Under "General" → "Python version", select **Python 3.11**
+4. Click "Save" and the app will redeploy automatically
 
 **Note**: Camera access in Streamlit Cloud depends on browser permissions and HTTPS. The app works best when run locally or on HTTPS-enabled domains.
 

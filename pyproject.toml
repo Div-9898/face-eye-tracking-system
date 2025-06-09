@@ -3,16 +3,18 @@ name = "face-eye-tracking-system"
 version = "1.0.0"
 description = "Real-time face and eye tracking application"
 authors = ["Your Name"]
-python = ">=3.11,<3.12"
+readme = "README.md"
+python = "^3.11,<3.13"
 
 [tool.poetry.dependencies]
-python = "^3.11"
-streamlit = "1.45.1"
-opencv-python = "4.10.0.84"
+python = "^3.11,<3.13"
+streamlit = "^1.28.0"
+opencv-python-headless = "^4.8.0"
 mediapipe = "0.10.18"
-numpy = "1.24.4"
-pandas = "2.0.3"
-plotly = "5.22.0"
+numpy = "^1.24.0"
+pandas = "^2.0.0"
+plotly = "^5.15.0"
+protobuf = ">=3.20,<5"
 
 [build-system]
 requires = ["poetry-core>=1.0.0"]
