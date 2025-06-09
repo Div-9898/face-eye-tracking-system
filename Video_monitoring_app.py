@@ -932,12 +932,33 @@ class StreamlitApp:
         
         # RTC configuration for STUN servers
         rtc_config = RTCConfiguration({
-            "iceServers": [{"urls": ["stun:stun.l.google.com:19302"]}]
+            "iceServers": [
+                {"urls": ["stun:stun.l.google.com:19302"]},
+                {"urls": ["stun:stun1.l.google.com:19302"]},
+                {"urls": ["stun:stun2.l.google.com:19302"]},
+                {"urls": ["stun:stun3.l.google.com:19302"]},
+                {"urls": ["stun:stun4.l.google.com:19302"]},
+                {"urls": ["stun:stun.relay.metered.ca:80"]},
+                {
+                    "urls": ["turn:openrelay.metered.ca:80"],
+                    "username": "openrelayproject",
+                    "credential": "openrelayproject"
+                },
+                {
+                    "urls": ["turn:openrelay.metered.ca:443"],
+                    "username": "openrelayproject", 
+                    "credential": "openrelayproject"
+                }
+            ],
+            "iceCandidatePoolSize": 10
         })
         
         # Create WebRTC streamer in camera placeholder
         with camera_placeholder.container():
-            st.success("🌐 Real-time browser tracking enabled with WebRTC!")
+            st.info("🌐 Attempting WebRTC connection...")
+            
+            # Add connection timeout warning
+            connection_timeout = st.empty()
             
             ctx = webrtc_streamer(
                 key="face-tracking",
@@ -952,12 +973,15 @@ class StreamlitApp:
                         "frameRate": {"ideal": 30}
                     },
                     "audio": False
-                }
+                },
+                sendback_audio=False,
+                video_html_attrs={"style": {"width": "100%", "height": "auto"}}
             )
             
-            # Show streaming status
+            # Check connection status and provide fallback
             if ctx.state.playing:
-                st.success("🎥 Streaming active! Face tracking in progress...")
+                connection_timeout.empty()
+                st.success("🎥 WebRTC connected successfully! Face tracking active...")
                 
                 # Update controls
                 col1, col2 = st.columns([1, 1])
@@ -973,23 +997,64 @@ class StreamlitApp:
                 # Show current frame count
                 if 'frame_count' in st.session_state:
                     st.metric("Frames Processed", st.session_state.frame_count)
+                    
+            elif ctx.state.signalling:
+                connection_timeout.warning("🔄 Connecting to camera... Please wait...")
+                
             else:
-                st.info("📹 Click 'START' above to begin real-time tracking")
-                st.markdown("""
-                ### Instructions:
-                1. Click the **START** button above
-                2. Allow camera access when prompted
-                3. Face tracking will begin automatically
-                4. Click the refresh buttons to update status and analytics
-                """)
+                connection_timeout.empty()
+                
+                # Connection failed or not started - offer fallback options
+                st.warning("⚠️ WebRTC connection issue detected!")
+                
+                col1, col2 = st.columns(2)
+                
+                with col1:
+                    if st.button("🔄 Retry WebRTC", key="retry_webrtc", use_container_width=True):
+                        st.rerun()
+                
+                with col2:
+                    if st.button("📸 Use Photo Mode", key="fallback_photo", use_container_width=True):
+                        # Switch to frame-by-frame mode
+                        st.session_state.force_photo_mode = True
+                        st.rerun()
+                
+                # Show troubleshooting info
+                with st.expander("🔧 Connection Troubleshooting"):
+                    st.markdown("""
+                    **WebRTC connection issues can be caused by:**
+                    
+                    1. **Network restrictions** (corporate firewalls, VPNs)
+                    2. **Browser security settings**
+                    3. **Ad blockers or privacy extensions**
+                    4. **Unstable internet connection**
+                    
+                    **Solutions:**
+                    
+                    - **Try a different browser** (Chrome/Edge work best)
+                    - **Disable VPN temporarily**
+                    - **Allow camera permissions** in browser settings
+                    - **Use the Photo Mode** as a reliable alternative
+                    - **Run locally** for best performance
+                    
+                    **Photo Mode:** Click "Use Photo Mode" for a more reliable experience that works in all environments.
+                    """)
+                
+                st.info("📹 Click 'START' above to begin, or use 'Use Photo Mode' for a reliable alternative")
         
-        # Update status display
+        # Force fallback to photo mode if requested
+        if st.session_state.get('force_photo_mode', False):
+            st.session_state.force_photo_mode = False
+            self._run_frame_by_frame_tracking(camera_placeholder, status_placeholder, analytics_placeholder)
+            return
+        
+        # Update status display when WebRTC is active
         if ctx.state.playing and 'webrtc_tracking_info' in st.session_state:
             tracking_info = st.session_state.webrtc_tracking_info
             with status_placeholder.container():
                 self._display_status_content(tracking_info)
         
-        # Update analytics display
+        # Update analytics display when WebRTC is active
         if ctx.state.playing:
             with analytics_placeholder.container():
                 self._display_analytics_content()
@@ -1000,8 +1065,8 @@ class StreamlitApp:
     def _run_frame_by_frame_tracking(self, camera_placeholder, status_placeholder, analytics_placeholder):
         """Fallback to frame-by-frame tracking if WebRTC is not available"""
         with camera_placeholder.container():
-            st.warning("🌐 WebRTC not available - Using frame-by-frame mode")
-            st.info("📸 Use the camera button below to capture frames for analysis")
+            st.success("📸 Photo Mode Active - Reliable cross-platform tracking!")
+            st.info("📋 Use the camera button below to capture frames for analysis")
             
             # Create columns for controls
             col1, col2, col3 = st.columns([2, 1, 1])
@@ -1009,18 +1074,20 @@ class StreamlitApp:
             with col1:
                 # Camera input for frame capture
                 captured_image = st.camera_input(
-                    "Click to capture frame for analysis",
-                    key=f"browser_camera_{st.session_state.frame_count}"
+                    "📷 Click to capture frame for analysis",
+                    key=f"browser_camera_{st.session_state.frame_count}",
+                    help="Take a photo to analyze your face and eye tracking"
                 )
             
             with col2:
-                st.metric("Frames Analyzed", st.session_state.frame_count)
+                st.metric("📊 Frames Analyzed", st.session_state.frame_count)
             
             with col3:
-                if st.button("🔄 Reset", key="reset_frames"):
+                if st.button("🔄 Reset Counters", key="reset_frames", use_container_width=True):
                     st.session_state.frame_count = 0
                     self.face_tracker.total_blinks = 0
                     self.face_tracker.tracking_data.clear()
+                    st.success("✅ Counters reset!")
                     st.rerun()
             
             if captured_image is not None:
@@ -1039,8 +1106,10 @@ class StreamlitApp:
                     # Process frame
                     processed_frame, tracking_info = self.face_tracker.process_frame(frame)
                     
-                    # Display processed frame
-                    st.image(processed_frame, channels="BGR", use_column_width=True)
+                    # Display processed frame with analysis
+                    st.subheader("📸 Analyzed Frame:")
+                    st.image(processed_frame, channels="BGR", use_column_width=True, 
+                            caption="Face tracking analysis with landmarks and eye detection")
                     
                     # Update status and analytics
                     self.update_status(status_placeholder, tracking_info)
@@ -1049,24 +1118,52 @@ class StreamlitApp:
                     # Increment frame count
                     st.session_state.frame_count += 1
                     
-                    # Auto-refresh to allow continuous capture
-                    st.info("✅ Frame processed! Take another photo to continue tracking.")
+                    # Provide user feedback
+                    if tracking_info['face_detected']:
+                        st.success(f"✅ Face detected! Take another photo to continue tracking.")
+                    else:
+                        st.warning("⚠️ No face detected. Ensure good lighting and face the camera.")
                     
                 except Exception as e:
-                    st.error(f"Error processing image: {str(e)}")
-            
-            # Show instructions
-            with st.expander("📖 Install WebRTC for Real-time Tracking", expanded=True):
+                    st.error(f"❌ Error processing image: {str(e)}")
+                    st.info("💡 Try taking another photo with better lighting or positioning.")
+            else:
+                # Show preview instructions
                 st.markdown("""
-                ### To enable real-time tracking:
+                <div style="text-align: center; padding: 2rem; 
+                           background: rgba(255, 255, 255, 0.05); 
+                           border-radius: 15px; 
+                           border: 2px dashed rgba(255, 255, 255, 0.2);">
+                    <h3 style="color: #888;">📷 Ready to Capture</h3>
+                    <p style="color: #666;">Click the camera button above to take a photo</p>
+                    <p style="color: #666;">Your photo will be analyzed for face and eye tracking</p>
+                </div>
+                """, unsafe_allow_html=True)
+            
+            # Show advantages of photo mode
+            with st.expander("✨ Photo Mode Advantages", expanded=False):
+                st.markdown("""
+                ### Why Photo Mode is Great:
                 
-                Run this command to install WebRTC support:
-                ```bash
-                pip install streamlit-webrtc av
-                ```
+                ✅ **Universal Compatibility** - Works on all devices and browsers  
+                ✅ **No Network Issues** - No WebRTC connection problems  
+                ✅ **Privacy Focused** - Only captures when you click  
+                ✅ **Reliable Analysis** - Same advanced AI as real-time mode  
+                ✅ **Perfect for Testing** - Ideal for trying out the features  
                 
-                Then restart the app for real-time video tracking!
+                ### Best Results Tips:
+                
+                📸 **Good lighting** - Face the light source  
+                👁️ **Look at camera** - Direct eye contact with lens  
+                🎯 **Center your face** - Keep face in the middle of frame  
+                📱 **Hold steady** - Avoid motion blur  
                 """)
+            
+            # Option to try WebRTC again
+            if st.button("🔄 Try WebRTC Mode Again", key="retry_webrtc_mode", use_container_width=True):
+                if 'force_photo_mode' in st.session_state:
+                    del st.session_state.force_photo_mode
+                st.rerun()
     
     def create_dashboard(self):
         """Main dashboard interface"""
