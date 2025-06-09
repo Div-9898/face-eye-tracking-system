@@ -161,6 +161,8 @@ Your Name - [@yourusername](https://twitter.com/yourusername)
 
 Project Link: [https://github.com/yourusername/face-eye-tracking-system](https://github.com/yourusername/face-eye-tracking-system)
 
+> **Note**: Remember to update the contact information and repository URLs with your actual GitHub username and details!
+
 ---
 
 <p align="center">Made with ❤️ using Python and Streamlit</p> 
