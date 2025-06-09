@@ -1,9 +1,10 @@
 # 👁️ Face & Eye Tracking System
 
-[![Streamlit App](https://static.streamlit.io/badges/streamlit_badge_black_white.svg)](https://face-eye-tracking-system.streamlit.app)
+[![Streamlit App](https://static.streamlit.io/badges/streamlit_badge_black_white.svg)](https://share.streamlit.io/deploy?repository=Div-9898/face-eye-tracking-system&branch=main&mainModule=streamlit_app.py)
 [![GitHub](https://img.shields.io/github/stars/Div-9898/face-eye-tracking-system?style=social)](https://github.com/Div-9898/face-eye-tracking-system)
+[![Deploy](https://img.shields.io/badge/Deploy%20to-Streamlit-FF4B4B)](https://share.streamlit.io/deploy?repository=Div-9898/face-eye-tracking-system&branch=main&mainModule=streamlit_app.py)
 
-> **🚀 [Run the App Now on Streamlit Cloud](https://face-eye-tracking-system.streamlit.app)** | No installation required!
+> **🚀 [Deploy Now on Streamlit Cloud](https://share.streamlit.io/deploy?repository=Div-9898/face-eye-tracking-system&branch=main&mainModule=streamlit_app.py)** | Click to deploy your own instance!
 
 A real-time face and eye tracking application built with Python, Streamlit, and MediaPipe. This system provides advanced facial monitoring capabilities with eye movement detection, blink counting, and comprehensive analytics.
 
