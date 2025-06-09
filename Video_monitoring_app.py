@@ -12,18 +12,7 @@ from collections import deque
 import threading
 import queue
 
-# Configure Streamlit page
-st.set_page_config(
-    page_title="Face & Eye Tracking System",
-    page_icon="👁️",
-    layout="wide",
-    initial_sidebar_state="expanded",
-    menu_items={
-        'Get Help': 'https://github.com/yourusername/face-tracking',
-        'Report a bug': 'https://github.com/yourusername/face-tracking/issues',
-        'About': '# Face & Eye Tracking System\n\nAdvanced real-time facial monitoring with eye tracking and analytics.'
-    }
-)
+# Page config is already set in streamlit_app.py, so we don't set it here
 
 # Apply global CSS theme
 st.markdown("""
