@@ -64,6 +64,8 @@ pip install -r requirements.txt
 
 ## 🎮 Usage
 
+### Local Usage
+
 1. Run the application:
 ```bash
 streamlit run Video_monitoring_app.py
@@ -74,6 +76,45 @@ streamlit run Video_monitoring_app.py
 3. Grant camera permissions when prompted
 
 4. Click "Start" to begin tracking
+
+### 🌐 Deploy on Streamlit Cloud
+
+You can also deploy this app on Streamlit Cloud for free:
+
+1. Fork this repository to your GitHub account
+2. Sign up for [Streamlit Cloud](https://streamlit.io/cloud)
+3. Click "New app" and select your forked repository
+4. Choose `streamlit_app.py` as the main file
+5. Click "Deploy"
+
+**Note**: Camera access in Streamlit Cloud depends on browser permissions and HTTPS. The app works best when run locally or on HTTPS-enabled domains.
+
+### 🐳 Docker Deployment (Optional)
+
+```dockerfile
+FROM python:3.11-slim
+
+WORKDIR /app
+
+RUN apt-get update && apt-get install -y \
+    libglib2.0-0 \
+    libsm6 \
+    libxext6 \
+    libxrender-dev \
+    libgomp1 \
+    libgstreamer1.0-0 \
+    libgstreamer-plugins-base1.0-0 \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY requirements.txt .
+RUN pip install -r requirements.txt
+
+COPY . .
+
+EXPOSE 8501
+
+CMD ["streamlit", "run", "Video_monitoring_app.py"]
+```
 
 ### Controls
 - **▶️ Start**: Begin face tracking session
