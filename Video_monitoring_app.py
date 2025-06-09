@@ -5,6 +5,7 @@ import mediapipe as mp
 import math
 import time
 import sys
+import os
 from datetime import datetime
 import pandas as pd
 import plotly.graph_objects as go
@@ -12,6 +13,8 @@ import plotly.express as px
 from collections import deque
 import threading
 import queue
+from PIL import Image
+import io
 
 # Page config is already set in streamlit_app.py, so we don't set it here
 # Last updated: 2025-01-09 - Fixed set_page_config error
@@ -573,6 +576,8 @@ class StreamlitApp:
             st.session_state.tracking_history = []
         if 'show_permission_popup' not in st.session_state:
             st.session_state.show_permission_popup = True
+        if 'frame_count' not in st.session_state:
+            st.session_state.frame_count = 0
     
     def request_camera_permission(self):
         """Request camera access from user with enhanced UI"""
@@ -841,6 +846,109 @@ class StreamlitApp:
             # Permission already handled, show loading
             st.info("🚀 Camera permission granted. Loading application...")
     
+    def _is_running_locally(self):
+        """Check if the app is running locally or in the cloud"""
+        # Check for common cloud indicators
+        is_cloud = any([
+            os.getenv('STREAMLIT_CLOUD_VENDOR') is not None,
+            os.getenv('STREAMLIT_SHARING_MODE') is not None,
+            os.getenv('IS_DOCKER_CONTAINER') is not None,
+            # Check if we can access local camera (this will fail in cloud)
+            'localhost' not in str(st.get_option('server.address')) if hasattr(st, 'get_option') else False
+        ])
+        
+        # Additional check - try to open camera quickly
+        if not is_cloud:
+            try:
+                test_cap = cv2.VideoCapture(0)
+                if test_cap.isOpened():
+                    test_cap.release()
+                    return True
+                else:
+                    return False
+            except:
+                return False
+        
+        return not is_cloud
+    
+    def _run_browser_tracking(self, camera_placeholder, status_placeholder, analytics_placeholder):
+        """Run tracking in browser mode using frame-by-frame capture"""
+        with camera_placeholder.container():
+            st.warning("🌐 Running in browser mode - Real-time video tracking is limited")
+            st.info("📸 Use the camera button below to capture frames for analysis")
+            
+            # Create columns for controls
+            col1, col2, col3 = st.columns([2, 1, 1])
+            
+            with col1:
+                # Camera input for frame capture
+                captured_image = st.camera_input(
+                    "Click to capture frame for analysis",
+                    key=f"browser_camera_{st.session_state.frame_count}"
+                )
+            
+            with col2:
+                st.metric("Frames Analyzed", st.session_state.frame_count)
+            
+            with col3:
+                if st.button("🔄 Reset", key="reset_frames"):
+                    st.session_state.frame_count = 0
+                    self.face_tracker.total_blinks = 0
+                    self.face_tracker.tracking_data.clear()
+                    st.rerun()
+            
+            if captured_image is not None:
+                # Process the captured image
+                try:
+                    # Convert uploaded image to OpenCV format
+                    image = Image.open(captured_image)
+                    image_array = np.array(image)
+                    
+                    # Convert RGB to BGR for OpenCV
+                    if len(image_array.shape) == 3:
+                        frame = cv2.cvtColor(image_array, cv2.COLOR_RGB2BGR)
+                    else:
+                        frame = image_array
+                    
+                    # Process frame
+                    processed_frame, tracking_info = self.face_tracker.process_frame(frame)
+                    
+                    # Display processed frame
+                    st.image(processed_frame, channels="BGR", use_column_width=True)
+                    
+                    # Update status and analytics
+                    self.update_status(status_placeholder, tracking_info)
+                    self.update_analytics(analytics_placeholder)
+                    
+                    # Increment frame count
+                    st.session_state.frame_count += 1
+                    
+                    # Auto-refresh to allow continuous capture
+                    st.info("✅ Frame processed! Take another photo to continue tracking.")
+                    
+                except Exception as e:
+                    st.error(f"Error processing image: {str(e)}")
+            
+            # Show instructions
+            with st.expander("📖 Browser Mode Instructions", expanded=False):
+                st.markdown("""
+                ### How to use Browser Mode:
+                
+                1. **Click the camera button** to capture a frame
+                2. **Allow camera access** when prompted by your browser
+                3. **Take a photo** - the frame will be analyzed automatically
+                4. **Repeat** to capture more frames for continuous tracking
+                
+                ### Limitations:
+                - No real-time video feed (frame-by-frame only)
+                - Analytics update after each captured frame
+                - Blink detection may be less accurate
+                
+                ### For Real-time Tracking:
+                - Download and run the app locally
+                - Use the command: `streamlit run Video_monitoring_app.py`
+                """)
+    
     def create_dashboard(self):
         """Main dashboard interface"""
         # Header with gradient
@@ -856,6 +964,13 @@ class StreamlitApp:
             </p>
         </div>
         """, unsafe_allow_html=True)
+        
+        # Show running mode
+        is_local = self._is_running_locally()
+        if not is_local:
+            st.info("🌐 Running in **Browser Mode** - Frame-by-frame analysis only. For real-time video tracking, run the app locally.")
+        else:
+            st.success("💻 Running in **Local Mode** - Full real-time video tracking available!")
         
         # Show session analytics if available and not tracking
         if not st.session_state.tracking_active and st.session_state.session_analytics:
@@ -972,6 +1087,8 @@ class StreamlitApp:
                     # Reset camera test flag so it can be tested again next time
                     if 'camera_tested' in st.session_state:
                         del st.session_state.camera_tested
+                    # Reset frame count for browser mode
+                    st.session_state.frame_count = 0
                     st.rerun()
             
             with col3:
@@ -1072,8 +1189,16 @@ class StreamlitApp:
     
     def run_tracking_loop(self, camera_placeholder, status_placeholder, analytics_placeholder):
         """Main tracking loop"""
+        # Check if we're running locally or in the cloud
+        is_local = self._is_running_locally()
+        
+        if not is_local:
+            # Cloud/browser deployment - use frame-by-frame mode
+            self._run_browser_tracking(camera_placeholder, status_placeholder, analytics_placeholder)
+            return
+        
+        # Local deployment - use OpenCV for real-time tracking
         # First, try to test camera access with Streamlit's camera_input if required
-        # This ensures browser permissions are properly set
         require_test = st.session_state.get('require_camera_test', True)
         
         if require_test and 'camera_tested' not in st.session_state:
