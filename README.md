@@ -1,10 +1,10 @@
 # 👁️ Face & Eye Tracking System
 
-[![Streamlit App](https://static.streamlit.io/badges/streamlit_badge_black_white.svg)](https://share.streamlit.io/deploy?repository=Div-9898/face-eye-tracking-system&branch=main&mainModule=streamlit_app.py)
+[![Streamlit App](https://static.streamlit.io/badges/streamlit_badge_black_white.svg)](https://face-eye-tracking-system.streamlit.app)
 [![GitHub](https://img.shields.io/github/stars/Div-9898/face-eye-tracking-system?style=social)](https://github.com/Div-9898/face-eye-tracking-system)
-[![Deploy](https://img.shields.io/badge/Deploy%20to-Streamlit-FF4B4B)](https://share.streamlit.io/deploy?repository=Div-9898/face-eye-tracking-system&branch=main&mainModule=streamlit_app.py)
+[![License](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
 
-> **🚀 [Deploy Now on Streamlit Cloud](https://share.streamlit.io/deploy?repository=Div-9898/face-eye-tracking-system&branch=main&mainModule=streamlit_app.py)** | Click to deploy your own instance!
+> **🚀 [Try the Live App](https://face-eye-tracking-system.streamlit.app)** | Real-time face and eye tracking in your browser!
 
 A real-time face and eye tracking application built with Python, Streamlit, and MediaPipe. This system provides advanced facial monitoring capabilities with eye movement detection, blink counting, and comprehensive analytics.
 
@@ -144,7 +144,8 @@ You can also deploy this app on Streamlit Cloud for free:
 2. Sign up for [Streamlit Cloud](https://streamlit.io/cloud)
 3. Click "New app" and select your forked repository
 4. Choose `streamlit_app.py` as the main file
-5. Click "Deploy"
+5. **IMPORTANT**: Click "Advanced settings" and select **Python 3.11**
+6. Click "Deploy"
 
 **Note**: Camera access in Streamlit Cloud depends on browser permissions and HTTPS. The app works best when run locally or on HTTPS-enabled domains.
 
