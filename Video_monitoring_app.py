@@ -902,35 +902,43 @@ class StreamlitApp:
                 'timestamp': time.time()
             }
         
+        # Create the video processor
+        class VideoProcessor:
+            def __init__(self, face_tracker):
+                self.face_tracker = face_tracker
+                self.frame_count = 0
+                self.last_update_time = time.time()
+            
+            def recv(self, frame):
+                img = frame.to_ndarray(format="bgr24")
+                
+                # Process frame
+                processed_frame, tracking_info = self.face_tracker.process_frame(img)
+                
+                # Update session state with tracking info
+                st.session_state.webrtc_tracking_info = tracking_info
+                st.session_state.frame_count = self.frame_count
+                
+                # Add to tracking data periodically
+                current_time = time.time()
+                if current_time - self.last_update_time > 0.5:  # Update every 0.5 seconds
+                    self.face_tracker.tracking_data.append(tracking_info)
+                    self.last_update_time = current_time
+                
+                self.frame_count += 1
+                
+                # Return processed frame
+                return av.VideoFrame.from_ndarray(processed_frame, format="bgr24")
+        
+        # RTC configuration for STUN servers
+        rtc_config = RTCConfiguration({
+            "iceServers": [{"urls": ["stun:stun.l.google.com:19302"]}]
+        })
+        
+        # Create WebRTC streamer in camera placeholder
         with camera_placeholder.container():
             st.success("🌐 Real-time browser tracking enabled with WebRTC!")
             
-            # Create the video processor
-            class VideoProcessor:
-                def __init__(self, face_tracker):
-                    self.face_tracker = face_tracker
-                    self.frame_count = 0
-                
-                def recv(self, frame):
-                    img = frame.to_ndarray(format="bgr24")
-                    
-                    # Process frame
-                    processed_frame, tracking_info = self.face_tracker.process_frame(img)
-                    
-                    # Update session state with tracking info
-                    st.session_state.webrtc_tracking_info = tracking_info
-                    st.session_state.frame_count = self.frame_count
-                    self.frame_count += 1
-                    
-                    # Return processed frame
-                    return av.VideoFrame.from_ndarray(processed_frame, format="bgr24")
-            
-            # RTC configuration for STUN servers
-            rtc_config = RTCConfiguration({
-                "iceServers": [{"urls": ["stun:stun.l.google.com:19302"]}]
-            })
-            
-            # Create WebRTC streamer
             ctx = webrtc_streamer(
                 key="face-tracking",
                 mode=WebRtcMode.SENDRECV,
@@ -947,46 +955,47 @@ class StreamlitApp:
                 }
             )
             
-            # Create placeholders for dynamic updates
+            # Show streaming status
             if ctx.state.playing:
-                # Create a container for real-time updates
-                update_container = st.container()
+                st.success("🎥 Streaming active! Face tracking in progress...")
                 
-                # Use a loop with placeholder updates
-                placeholder_status = status_placeholder.empty()
-                placeholder_analytics = analytics_placeholder.empty()
+                # Update controls
+                col1, col2 = st.columns([1, 1])
                 
-                while ctx.state.playing and st.session_state.tracking_active:
-                    # Get the latest tracking info
-                    tracking_info = st.session_state.webrtc_tracking_info
-                    
-                    # Update status display
-                    with placeholder_status.container():
-                        self._display_status_content(tracking_info)
-                    
-                    # Update analytics periodically
-                    if st.session_state.frame_count % 10 == 0:
-                        # Add tracking info to history
-                        self.face_tracker.tracking_data.append(tracking_info)
-                        
-                        # Update analytics display
-                        with placeholder_analytics.container():
-                            self._display_analytics_content()
-                    
-                    # Small delay to prevent overwhelming the system
-                    time.sleep(0.1)
+                with col1:
+                    if st.button("🔄 Update Status", key="update_status", use_container_width=True):
+                        pass  # Will update below
+                
+                with col2:
+                    if st.button("📊 Update Analytics", key="update_analytics", use_container_width=True):
+                        pass  # Will update below
+                
+                # Show current frame count
+                if 'frame_count' in st.session_state:
+                    st.metric("Frames Processed", st.session_state.frame_count)
             else:
-                # Show instructions when not streaming
-                with st.info("📹 Click 'START' above to begin real-time tracking"):
-                    st.markdown("""
-                    ### Instructions:
-                    1. Click the **START** button above
-                    2. Allow camera access when prompted
-                    3. Face tracking will begin automatically
-                    4. Analytics update in real-time!
-                    
-                    **Note:** Make sure to click "Stop" in the control panel to properly end the session.
-                    """)
+                st.info("📹 Click 'START' above to begin real-time tracking")
+                st.markdown("""
+                ### Instructions:
+                1. Click the **START** button above
+                2. Allow camera access when prompted
+                3. Face tracking will begin automatically
+                4. Click the refresh buttons to update status and analytics
+                """)
+        
+        # Update status display
+        if ctx.state.playing and 'webrtc_tracking_info' in st.session_state:
+            tracking_info = st.session_state.webrtc_tracking_info
+            with status_placeholder.container():
+                self._display_status_content(tracking_info)
+        
+        # Update analytics display
+        if ctx.state.playing:
+            with analytics_placeholder.container():
+                self._display_analytics_content()
+                
+            # Auto-update hint
+            st.info("💡 For continuous updates, click the refresh buttons above or run the app locally.")
     
     def _run_frame_by_frame_tracking(self, camera_placeholder, status_placeholder, analytics_placeholder):
         """Fallback to frame-by-frame tracking if WebRTC is not available"""
