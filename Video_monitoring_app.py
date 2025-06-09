@@ -714,42 +714,84 @@ class StreamlitApp:
             st.markdown("""
             <div class="permission-popup">
                 <span style="font-size: 4rem;">📷</span>
-                <h2 style="color: #333; margin: 1rem 0;">Camera Permission Required</h2>
+                <h2 style="color: #333; margin: 1rem 0;">Camera Access Setup</h2>
                 <p style="color: #666; margin-bottom: 1.5rem;">
-                    This app needs access to your camera to track facial movements and eye patterns.
-                    Your privacy is important - no data is stored without your consent.
+                    To track your face and eyes, we need camera permission.
+                    Your privacy is protected - video is processed locally only.
                 </p>
             </div>
             """, unsafe_allow_html=True)
             
-            col1, col2, col3 = st.columns([1, 2, 1])
+            # Instructions section
+            st.markdown("""
+            <div style="background: rgba(255, 255, 255, 0.9); 
+                       border-radius: 15px; 
+                       padding: 1.5rem; 
+                       margin: 1rem auto;
+                       max-width: 600px;
+                       border: 2px solid rgba(102, 126, 234, 0.3);">
+                <h3 style="color: #333; margin-top: 0;">📋 Quick Setup Instructions:</h3>
+                <ol style="color: #555; text-align: left;">
+                    <li>Click the <strong>camera button</strong> below</li>
+                    <li>Your browser will ask for camera permission</li>
+                    <li>Click <strong>"Allow"</strong> in the popup</li>
+                    <li>Take a quick photo or just click the button</li>
+                    <li>You'll be redirected to the main dashboard</li>
+                </ol>
+            </div>
+            """, unsafe_allow_html=True)
+            
+            col1, col2, col3 = st.columns([1, 3, 1])
             with col2:
-                if st.button("🎥 Allow Camera Access", type="primary", use_container_width=True, key="allow_camera"):
-                    # Simply grant permission and move to dashboard
+                # Use camera_input which automatically triggers browser permission dialog
+                st.markdown("### 👇 Click the Camera Button Below")
+                
+                camera_test = st.camera_input(
+                    "Click to enable camera and grant permission", 
+                    key="auto_camera_permission",
+                    help="This will open your camera and request permission"
+                )
+                
+                if camera_test is not None:
+                    # Camera permission granted!
                     st.session_state.camera_permission = True
                     st.session_state.show_permission_popup = False
-                    st.success("✅ Proceeding to dashboard...")
-                    time.sleep(0.5)
+                    st.balloons()
+                    st.success("🎉 Perfect! Camera access granted!")
+                    st.info("🚀 Loading the Face Tracking Dashboard...")
+                    time.sleep(1.5)
                     st.rerun()
                 
-                # Show camera test button separately
-                if st.button("🔧 Test Camera First (Optional)", use_container_width=True):
-                    with st.spinner("Testing camera..."):
-                        try:
-                            cap = cv2.VideoCapture(0)
-                            if cap.isOpened():
-                                ret, frame = cap.read()
-                                if ret:
-                                    # Show a quick preview
-                                    frame = cv2.flip(frame, 1)
-                                    frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-                                    st.image(frame_rgb, caption="Camera Preview", use_column_width=True)
-                                    st.success("✅ Camera is working!")
-                                cap.release()
-                            else:
-                                st.error("Could not open camera.")
-                        except Exception as e:
-                            st.error(f"Camera error: {str(e)}")
+                st.markdown("<br>", unsafe_allow_html=True)
+                
+                # Alternative options
+                with st.expander("⚡ Quick Access Options"):
+                    col_a, col_b = st.columns(2)
+                    
+                    with col_a:
+                        if st.button("🚀 I've already granted permission", use_container_width=True):
+                            # Test if camera is actually accessible
+                            try:
+                                cap = cv2.VideoCapture(0)
+                                if cap.isOpened():
+                                    cap.release()
+                                    st.session_state.camera_permission = True
+                                    st.session_state.show_permission_popup = False
+                                    st.success("✅ Camera detected! Loading...")
+                                    time.sleep(0.5)
+                                    st.rerun()
+                                else:
+                                    st.error("Camera not accessible. Please use the camera button above.")
+                            except:
+                                st.error("Camera error. Please use the camera button above.")
+                    
+                    with col_b:
+                        if st.button("💻 Continue without camera", use_container_width=True):
+                            st.warning("⚠️ Camera is required for face tracking features")
+                            if st.checkbox("I understand the app won't work properly"):
+                                st.session_state.camera_permission = True
+                                st.session_state.show_permission_popup = False
+                                st.rerun()
                 
                 st.markdown("<br>", unsafe_allow_html=True)
                 
