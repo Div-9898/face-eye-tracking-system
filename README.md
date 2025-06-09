@@ -3,6 +3,7 @@
 [![Streamlit App](https://static.streamlit.io/badges/streamlit_badge_black_white.svg)](https://face-eye-tracking-system.streamlit.app)
 [![GitHub](https://img.shields.io/github/stars/Div-9898/face-eye-tracking-system?style=social)](https://github.com/Div-9898/face-eye-tracking-system)
 [![License](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
+![Python](https://img.shields.io/badge/Python-3.11-blue.svg)
 
 > **🚀 [Try the Live App](https://face-eye-tracking-system.streamlit.app)** | Real-time face and eye tracking in your browser!
 

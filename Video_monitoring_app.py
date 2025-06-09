@@ -13,6 +13,7 @@ import threading
 import queue
 
 # Page config is already set in streamlit_app.py, so we don't set it here
+# Last updated: 2025-01-09 - Fixed set_page_config error
 
 # Apply global CSS theme
 st.markdown("""
