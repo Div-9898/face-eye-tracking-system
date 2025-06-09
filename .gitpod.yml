@@ -1,0 +1,20 @@
+image: gitpod/workspace-python-3.11
+
+tasks:
+  - name: Setup and Run
+    init: |
+      pip install -r requirements.txt
+      echo "✅ Dependencies installed!"
+    command: |
+      echo "🚀 Starting Face & Eye Tracking System..."
+      streamlit run Video_monitoring_app.py
+
+ports:
+  - port: 8501
+    onOpen: open-browser
+    visibility: public
+
+vscode:
+  extensions:
+    - ms-python.python
+    - ms-python.vscode-pylance 

@@ -1,5 +1,9 @@
-<<<<<<< HEAD
 # 👁️ Face & Eye Tracking System
+
+[![Streamlit App](https://static.streamlit.io/badges/streamlit_badge_black_white.svg)](https://face-eye-tracking-system.streamlit.app)
+[![GitHub](https://img.shields.io/github/stars/Div-9898/face-eye-tracking-system?style=social)](https://github.com/Div-9898/face-eye-tracking-system)
+
+> **🚀 [Run the App Now on Streamlit Cloud](https://face-eye-tracking-system.streamlit.app)** | No installation required!
 
 A real-time face and eye tracking application built with Python, Streamlit, and MediaPipe. This system provides advanced facial monitoring capabilities with eye movement detection, blink counting, and comprehensive analytics.
 
@@ -7,6 +11,20 @@ A real-time face and eye tracking application built with Python, Streamlit, and 
 ![Streamlit](https://img.shields.io/badge/Streamlit-1.28+-red.svg)
 ![MediaPipe](https://img.shields.io/badge/MediaPipe-0.10+-green.svg)
 ![License](https://img.shields.io/badge/License-MIT-yellow.svg)
+
+## 🎯 Quick Start
+
+### 🌐 Run Online (No Installation)
+Click here to run the app directly in your browser:
+- **[Launch App on Streamlit Cloud →](https://face-eye-tracking-system.streamlit.app)**
+
+### 💻 Run Locally
+```bash
+git clone https://github.com/Div-9898/face-eye-tracking-system.git
+cd face-eye-tracking-system
+pip install -r requirements.txt
+streamlit run Video_monitoring_app.py
+```
 
 ## ✨ Features
 
@@ -34,15 +52,49 @@ A real-time face and eye tracking application built with Python, Streamlit, and 
 - 👀 Individual eye detection status
 - 🔄 Head orientation gauges
 
-## 🚀 Installation
+## 🚀 Run the App
 
-### Prerequisites
+### 🌐 Method 1: Streamlit Cloud (Easiest - No Installation!)
+[![Open in Streamlit](https://static.streamlit.io/badges/streamlit_badge_black_white.svg)](https://face-eye-tracking-system.streamlit.app)
+
+Click the badge above or visit: https://face-eye-tracking-system.streamlit.app
+
+**Note**: Camera features work best locally due to browser security restrictions.
+
+### 💻 Method 2: GitHub Codespaces (Cloud Development)
+[![Open in GitHub Codespaces](https://github.com/codespaces/badge.svg)](https://codespaces.new/Div-9898/face-eye-tracking-system)
+
+1. Click the badge above
+2. Wait for environment setup
+3. Run: `streamlit run Video_monitoring_app.py`
+4. The app will open automatically
+
+### 🐙 Method 3: Gitpod (Alternative Cloud IDE)
+[![Open in Gitpod](https://gitpod.io/button/open-in-gitpod.svg)](https://gitpod.io/#https://github.com/Div-9898/face-eye-tracking-system)
+
+### 🖥️ Method 4: Local Installation
+
+#### Prerequisites
 - Python 3.8 or higher
 - Webcam/Camera
 - Windows/Linux/MacOS
 
-### Setup
+#### Quick Setup
+```bash
+# Clone and enter directory
+git clone https://github.com/Div-9898/face-eye-tracking-system.git
+cd face-eye-tracking-system
 
+# Run the setup script (Linux/Mac)
+chmod +x run.sh
+./run.sh
+
+# Or manually:
+pip install -r requirements.txt
+streamlit run Video_monitoring_app.py
+```
+
+#### Detailed Setup
 1. Clone the repository:
 ```bash
 git clone https://github.com/Div-9898/face-eye-tracking-system.git
@@ -61,6 +113,11 @@ source venv/bin/activate
 3. Install dependencies:
 ```bash
 pip install -r requirements.txt
+```
+
+4. Run the app:
+```bash
+streamlit run Video_monitoring_app.py
 ```
 
 ## 🎮 Usage
@@ -206,7 +263,3 @@ Project Link: [https://github.com/Div-9898/face-eye-tracking-system](https://git
 ---
 
 <p align="center">Made with ❤️ using Python and Streamlit</p> 
-=======
-# face-eye-tracking-system
-face-eye-tracking-system
->>>>>>> 2786924ce32a9e77414b8750327b20998fafd7df
