@@ -562,8 +562,6 @@ class StreamlitApp:
         """Initialize session state variables"""
         if 'camera_permission' not in st.session_state:
             st.session_state.camera_permission = False
-        if 'camera_tested' not in st.session_state:
-            st.session_state.camera_tested = False
         if 'tracking_active' not in st.session_state:
             st.session_state.tracking_active = False
         if 'session_analytics' not in st.session_state:
@@ -727,44 +725,31 @@ class StreamlitApp:
             col1, col2, col3 = st.columns([1, 2, 1])
             with col2:
                 if st.button("🎥 Allow Camera Access", type="primary", use_container_width=True, key="allow_camera"):
-                    # Show instructions for camera permission
-                    st.info("📌 A browser popup will appear asking for camera permission. Please click 'Allow'.")
-                    
-                    # Use Streamlit's camera_input to trigger permission request
-                    with st.expander("📸 Camera Permission Test", expanded=True):
-                        st.write("Click the camera button below to trigger the permission request:")
-                        
-                        # This will trigger the browser's camera permission dialog
-                        camera_image = st.camera_input("Click to enable camera", key="camera_permission_test")
-                        
-                        if camera_image is not None:
-                            st.success("✅ Camera access granted successfully!")
-                            st.session_state.camera_permission = True
-                            st.session_state.show_permission_popup = False
-                            time.sleep(0.5)
-                            st.rerun()
-                    
-                    # Alternative method using OpenCV
-                    if st.button("🔧 Alternative: Test Camera Directly", use_container_width=True):
-                        with st.spinner("Testing camera access..."):
-                            try:
-                                # Try to open camera
-                                cap = cv2.VideoCapture(0)
-                                if cap.isOpened():
-                                    ret, frame = cap.read()
-                                    cap.release()
-                                    if ret:
-                                        st.session_state.camera_permission = True
-                                        st.session_state.show_permission_popup = False
-                                        st.success("✅ Camera detected! Starting application...")
-                                        time.sleep(0.5)
-                                        st.rerun()
-                                    else:
-                                        st.error("Camera found but couldn't read frames.")
-                                else:
-                                    st.error("Could not open camera. Please check your camera settings.")
-                            except Exception as e:
-                                st.error(f"Camera error: {str(e)}")
+                    # Simply grant permission and move to dashboard
+                    st.session_state.camera_permission = True
+                    st.session_state.show_permission_popup = False
+                    st.success("✅ Proceeding to dashboard...")
+                    time.sleep(0.5)
+                    st.rerun()
+                
+                # Show camera test button separately
+                if st.button("🔧 Test Camera First (Optional)", use_container_width=True):
+                    with st.spinner("Testing camera..."):
+                        try:
+                            cap = cv2.VideoCapture(0)
+                            if cap.isOpened():
+                                ret, frame = cap.read()
+                                if ret:
+                                    # Show a quick preview
+                                    frame = cv2.flip(frame, 1)
+                                    frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+                                    st.image(frame_rgb, caption="Camera Preview", use_column_width=True)
+                                    st.success("✅ Camera is working!")
+                                cap.release()
+                            else:
+                                st.error("Could not open camera.")
+                        except Exception as e:
+                            st.error(f"Camera error: {str(e)}")
                 
                 st.markdown("<br>", unsafe_allow_html=True)
                 
@@ -806,87 +791,6 @@ class StreamlitApp:
         else:
             # Permission already handled, show loading
             st.info("🚀 Camera permission granted. Loading application...")
-    
-    def test_camera_access(self):
-        """Test camera access and show preview"""
-        st.markdown("""
-        <div style="text-align: center; padding: 2rem;">
-            <h2 style="color: white;">🎥 Testing Camera Access</h2>
-            <p style="color: #888;">Making sure your camera is working properly...</p>
-        </div>
-        """, unsafe_allow_html=True)
-        
-        # Create a placeholder for camera test
-        camera_test_placeholder = st.empty()
-        
-        # Try to access camera
-        cap = None
-        for idx in [0, 1, 2]:
-            try:
-                cap = cv2.VideoCapture(idx, cv2.CAP_DSHOW)
-                if cap.isOpened():
-                    break
-            except:
-                continue
-        
-        if cap is None or not cap.isOpened():
-            cap = cv2.VideoCapture(0)
-        
-        if not cap.isOpened():
-            st.error("❌ Could not access camera!")
-            st.error("Please check:")
-            st.markdown("""
-            1. **Camera permissions** - Make sure you allowed camera access
-            2. **Other applications** - Close any apps using the camera
-            3. **Camera drivers** - Ensure your camera drivers are installed
-            """)
-            
-            if st.button("🔄 Retry Camera Access", type="primary"):
-                st.session_state.camera_permission = False
-                st.session_state.show_permission_popup = True
-                st.rerun()
-            return False
-        
-        # Camera is accessible, show preview
-        with camera_test_placeholder.container():
-            st.success("✅ Camera detected successfully!")
-            
-            # Show a quick preview
-            st.markdown("### 📸 Camera Preview")
-            
-            # Capture a few frames to show preview
-            preview_placeholder = st.empty()
-            
-            for i in range(30):  # Show preview for ~1 second
-                ret, frame = cap.read()
-                if ret:
-                    frame = cv2.flip(frame, 1)  # Mirror effect
-                    
-                    # Add overlay text
-                    cv2.putText(frame, "Camera Test - Looking good!", (50, 50), 
-                               cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
-                    
-                    # Convert to RGB for display
-                    frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-                    
-                    with preview_placeholder.container():
-                        st.image(frame_rgb, channels="RGB", use_column_width=True)
-                
-                time.sleep(0.033)  # ~30 FPS
-            
-            cap.release()
-            
-            # Success message
-            st.balloons()
-            st.success("🎉 Camera test completed successfully!")
-            st.info("✨ Your camera is ready for face tracking!")
-            
-            # Mark camera as tested
-            st.session_state.camera_tested = True
-            
-            # Auto-proceed after short delay
-            time.sleep(1)
-            return True
     
     def create_dashboard(self):
         """Main dashboard interface"""
@@ -1780,13 +1684,8 @@ class StreamlitApp:
             self.request_camera_permission()
             return
         
-        # Test camera access if not already tested
-        if not st.session_state.camera_tested:
-            if not self.test_camera_access():
-                return
-            st.rerun()  # Reload to show main dashboard
-        
-        # Main dashboard
+        # Skip the camera test for now and go directly to dashboard
+        # The camera will be tested when the user clicks "Start"
         self.create_dashboard()
 
 # Additional utility functions
