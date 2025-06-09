@@ -15,6 +15,12 @@ import threading
 import queue
 from PIL import Image
 import io
+try:
+    from streamlit_webrtc import webrtc_streamer, WebRtcMode, RTCConfiguration
+    import av
+    WEBRTC_AVAILABLE = True
+except ImportError:
+    WEBRTC_AVAILABLE = False
 
 # Page config is already set in streamlit_app.py, so we don't set it here
 # Last updated: 2025-01-09 - Fixed set_page_config error
@@ -872,9 +878,120 @@ class StreamlitApp:
         return not is_cloud
     
     def _run_browser_tracking(self, camera_placeholder, status_placeholder, analytics_placeholder):
-        """Run tracking in browser mode using frame-by-frame capture"""
+        """Run tracking in browser mode using WebRTC for real-time video"""
+        if not WEBRTC_AVAILABLE:
+            # Fallback to frame-by-frame mode if WebRTC is not available
+            self._run_frame_by_frame_tracking(camera_placeholder, status_placeholder, analytics_placeholder)
+            return
+        
+        # Create shared state for WebRTC
+        if 'webrtc_tracking_info' not in st.session_state:
+            st.session_state.webrtc_tracking_info = {
+                'face_detected': False,
+                'is_centered': False,
+                'looking_at_camera': False,
+                'center_distance': 0,
+                'head_angles': [0, 0, 0],
+                'face_center': (0, 0),
+                'left_eye_detected': False,
+                'right_eye_detected': False,
+                'left_ear': 0,
+                'right_ear': 0,
+                'is_blinking': False,
+                'total_blinks': 0,
+                'timestamp': time.time()
+            }
+        
         with camera_placeholder.container():
-            st.warning("🌐 Running in browser mode - Real-time video tracking is limited")
+            st.success("🌐 Real-time browser tracking enabled with WebRTC!")
+            
+            # Create the video processor
+            class VideoProcessor:
+                def __init__(self, face_tracker):
+                    self.face_tracker = face_tracker
+                    self.frame_count = 0
+                
+                def recv(self, frame):
+                    img = frame.to_ndarray(format="bgr24")
+                    
+                    # Process frame
+                    processed_frame, tracking_info = self.face_tracker.process_frame(img)
+                    
+                    # Update session state with tracking info
+                    st.session_state.webrtc_tracking_info = tracking_info
+                    st.session_state.frame_count = self.frame_count
+                    self.frame_count += 1
+                    
+                    # Return processed frame
+                    return av.VideoFrame.from_ndarray(processed_frame, format="bgr24")
+            
+            # RTC configuration for STUN servers
+            rtc_config = RTCConfiguration({
+                "iceServers": [{"urls": ["stun:stun.l.google.com:19302"]}]
+            })
+            
+            # Create WebRTC streamer
+            ctx = webrtc_streamer(
+                key="face-tracking",
+                mode=WebRtcMode.SENDRECV,
+                rtc_configuration=rtc_config,
+                video_processor_factory=lambda: VideoProcessor(self.face_tracker),
+                async_processing=True,
+                media_stream_constraints={
+                    "video": {
+                        "width": {"ideal": 640},
+                        "height": {"ideal": 480},
+                        "frameRate": {"ideal": 30}
+                    },
+                    "audio": False
+                }
+            )
+            
+            # Create placeholders for dynamic updates
+            if ctx.state.playing:
+                # Create a container for real-time updates
+                update_container = st.container()
+                
+                # Use a loop with placeholder updates
+                placeholder_status = status_placeholder.empty()
+                placeholder_analytics = analytics_placeholder.empty()
+                
+                while ctx.state.playing and st.session_state.tracking_active:
+                    # Get the latest tracking info
+                    tracking_info = st.session_state.webrtc_tracking_info
+                    
+                    # Update status display
+                    with placeholder_status.container():
+                        self._display_status_content(tracking_info)
+                    
+                    # Update analytics periodically
+                    if st.session_state.frame_count % 10 == 0:
+                        # Add tracking info to history
+                        self.face_tracker.tracking_data.append(tracking_info)
+                        
+                        # Update analytics display
+                        with placeholder_analytics.container():
+                            self._display_analytics_content()
+                    
+                    # Small delay to prevent overwhelming the system
+                    time.sleep(0.1)
+            else:
+                # Show instructions when not streaming
+                with st.info("📹 Click 'START' above to begin real-time tracking"):
+                    st.markdown("""
+                    ### Instructions:
+                    1. Click the **START** button above
+                    2. Allow camera access when prompted
+                    3. Face tracking will begin automatically
+                    4. Analytics update in real-time!
+                    
+                    **Note:** Make sure to click "Stop" in the control panel to properly end the session.
+                    """)
+    
+    def _run_frame_by_frame_tracking(self, camera_placeholder, status_placeholder, analytics_placeholder):
+        """Fallback to frame-by-frame tracking if WebRTC is not available"""
+        with camera_placeholder.container():
+            st.warning("🌐 WebRTC not available - Using frame-by-frame mode")
             st.info("📸 Use the camera button below to capture frames for analysis")
             
             # Create columns for controls
@@ -930,23 +1047,16 @@ class StreamlitApp:
                     st.error(f"Error processing image: {str(e)}")
             
             # Show instructions
-            with st.expander("📖 Browser Mode Instructions", expanded=False):
+            with st.expander("📖 Install WebRTC for Real-time Tracking", expanded=True):
                 st.markdown("""
-                ### How to use Browser Mode:
+                ### To enable real-time tracking:
                 
-                1. **Click the camera button** to capture a frame
-                2. **Allow camera access** when prompted by your browser
-                3. **Take a photo** - the frame will be analyzed automatically
-                4. **Repeat** to capture more frames for continuous tracking
+                Run this command to install WebRTC support:
+                ```bash
+                pip install streamlit-webrtc av
+                ```
                 
-                ### Limitations:
-                - No real-time video feed (frame-by-frame only)
-                - Analytics update after each captured frame
-                - Blink detection may be less accurate
-                
-                ### For Real-time Tracking:
-                - Download and run the app locally
-                - Use the command: `streamlit run Video_monitoring_app.py`
+                Then restart the app for real-time video tracking!
                 """)
     
     def create_dashboard(self):
@@ -968,7 +1078,10 @@ class StreamlitApp:
         # Show running mode
         is_local = self._is_running_locally()
         if not is_local:
-            st.info("🌐 Running in **Browser Mode** - Frame-by-frame analysis only. For real-time video tracking, run the app locally.")
+            if WEBRTC_AVAILABLE:
+                st.success("🌐 Running in **Browser Mode** with WebRTC - Real-time video tracking enabled!")
+            else:
+                st.info("🌐 Running in **Browser Mode** - Install streamlit-webrtc for real-time tracking")
         else:
             st.success("💻 Running in **Local Mode** - Full real-time video tracking available!")
         
@@ -1360,265 +1473,269 @@ Available backends: {[cv2.videoio_registry.getBackendName(b) for b in cv2.videoi
     def update_status(self, placeholder, tracking_info):
         """Update real-time status display with dynamic UI"""
         with placeholder.container():
-            # Create dynamic status cards
-            st.markdown("""
-            <style>
-                .status-card {
-                    background: rgba(255, 255, 255, 0.05);
-                    backdrop-filter: blur(10px);
-                    border-radius: 15px;
-                    padding: 1rem;
-                    margin: 0.5rem 0;
-                    border: 1px solid rgba(255, 255, 255, 0.1);
-                    transition: all 0.3s ease;
-                }
-                
-                .status-indicator {
-                    display: inline-block;
-                    width: 10px;
-                    height: 10px;
-                    border-radius: 50%;
-                    margin-right: 0.5rem;
-                    animation: pulse 2s infinite;
-                }
-                
-                .status-active {
-                    background: #2ecc71;
-                    box-shadow: 0 0 10px #2ecc71;
-                }
-                
-                .status-warning {
-                    background: #f39c12;
-                    box-shadow: 0 0 10px #f39c12;
-                }
-                
-                .status-error {
-                    background: #e74c3c;
-                    box-shadow: 0 0 10px #e74c3c;
-                }
-            </style>
-            """, unsafe_allow_html=True)
+            self._display_status_content(tracking_info)
+    
+    def _display_status_content(self, tracking_info):
+        """Display status content without placeholder wrapper"""
+        # Create dynamic status cards
+        st.markdown("""
+        <style>
+            .status-card {
+                background: rgba(255, 255, 255, 0.05);
+                backdrop-filter: blur(10px);
+                border-radius: 15px;
+                padding: 1rem;
+                margin: 0.5rem 0;
+                border: 1px solid rgba(255, 255, 255, 0.1);
+                transition: all 0.3s ease;
+            }
             
-            # Face Detection Status
-            face_status = "status-active" if tracking_info['face_detected'] else "status-error"
+            .status-indicator {
+                display: inline-block;
+                width: 10px;
+                height: 10px;
+                border-radius: 50%;
+                margin-right: 0.5rem;
+                animation: pulse 2s infinite;
+            }
+            
+            .status-active {
+                background: #2ecc71;
+                box-shadow: 0 0 10px #2ecc71;
+            }
+            
+            .status-warning {
+                background: #f39c12;
+                box-shadow: 0 0 10px #f39c12;
+            }
+            
+            .status-error {
+                background: #e74c3c;
+                box-shadow: 0 0 10px #e74c3c;
+            }
+        </style>
+        """, unsafe_allow_html=True)
+        
+        # Face Detection Status 
+        face_status = "status-active" if tracking_info['face_detected'] else "status-error"
+        st.markdown(f"""
+        <div class="status-card">
+            <span class="status-indicator {face_status}"></span>
+            <strong>Face Detection:</strong> {'Detected ✓' if tracking_info['face_detected'] else 'Not Detected ✗'}
+        </div>
+        """, unsafe_allow_html=True)
+        
+        # Centering Status
+        center_status = "status-active" if tracking_info['is_centered'] else "status-warning"
+        st.markdown(f"""
+        <div class="status-card">
+            <span class="status-indicator {center_status}"></span>
+            <strong>Position:</strong> {'Centered 🎯' if tracking_info['is_centered'] else 'Off-Center ⚠️'}
+        </div>
+        """, unsafe_allow_html=True)
+        
+        # Eye Detection with visual bars
+        left_detected = tracking_info.get('left_eye_detected', False)
+        right_detected = tracking_info.get('right_eye_detected', False)
+        
+        st.markdown("""
+        <div class="status-card">
+            <strong>👁️ Eye Detection</strong>
+            <div style="display: flex; gap: 1rem; margin-top: 0.5rem;">
+                <div style="flex: 1;">
+                    <div style="background: """ + ("#2ecc71" if left_detected else "#e74c3c") + """; 
+                                height: 8px; 
+                                border-radius: 4px;
+                                box-shadow: 0 0 10px """ + ("#2ecc71" if left_detected else "#e74c3c") + """;">
+                    </div>
+                    <small style="color: #888;">Left Eye</small>
+                </div>
+                <div style="flex: 1;">
+                    <div style="background: """ + ("#2ecc71" if right_detected else "#e74c3c") + """; 
+                                height: 8px; 
+                                border-radius: 4px;
+                                box-shadow: 0 0 10px """ + ("#2ecc71" if right_detected else "#e74c3c") + """;">
+                    </div>
+                    <small style="color: #888;">Right Eye</small>
+                </div>
+            </div>
+        </div>
+        """, unsafe_allow_html=True)
+        
+        # Looking at Camera Status
+        looking_status = "status-active" if tracking_info['looking_at_camera'] else "status-warning"
+        st.markdown(f"""
+        <div class="status-card">
+            <span class="status-indicator {looking_status}"></span>
+            <strong>Gaze:</strong> {'Looking at Camera ✅' if tracking_info['looking_at_camera'] else 'Not Looking at Camera ↗️'}
+        </div>
+        """, unsafe_allow_html=True)
+        
+        # Metrics with modern design
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            # Distance metric with progress bar
+            distance = tracking_info['center_distance']
+            max_distance = 200  # Maximum expected distance
+            progress = min(100, (distance / max_distance) * 100)
+            color = "#2ecc71" if distance < self.face_tracker.center_threshold else "#e74c3c"
+            
             st.markdown(f"""
             <div class="status-card">
-                <span class="status-indicator {face_status}"></span>
-                <strong>Face Detection:</strong> {'Detected ✓' if tracking_info['face_detected'] else 'Not Detected ✗'}
-            </div>
-            """, unsafe_allow_html=True)
-            
-            # Centering Status
-            center_status = "status-active" if tracking_info['is_centered'] else "status-warning"
-            st.markdown(f"""
-            <div class="status-card">
-                <span class="status-indicator {center_status}"></span>
-                <strong>Position:</strong> {'Centered 🎯' if tracking_info['is_centered'] else 'Off-Center ⚠️'}
-            </div>
-            """, unsafe_allow_html=True)
-            
-            # Eye Detection with visual bars
-            left_detected = tracking_info.get('left_eye_detected', False)
-            right_detected = tracking_info.get('right_eye_detected', False)
-            
-            st.markdown("""
-            <div class="status-card">
-                <strong>👁️ Eye Detection</strong>
-                <div style="display: flex; gap: 1rem; margin-top: 0.5rem;">
-                    <div style="flex: 1;">
-                        <div style="background: """ + ("#2ecc71" if left_detected else "#e74c3c") + """; 
-                                    height: 8px; 
-                                    border-radius: 4px;
-                                    box-shadow: 0 0 10px """ + ("#2ecc71" if left_detected else "#e74c3c") + """;">
+                <strong>Distance from Center</strong>
+                <div style="margin: 0.5rem 0;">
+                    <div style="background: rgba(255, 255, 255, 0.1); 
+                                height: 20px; 
+                                border-radius: 10px; 
+                                overflow: hidden;">
+                        <div style="background: {color}; 
+                                    width: {progress}%; 
+                                    height: 100%;
+                                    transition: width 0.3s ease;
+                                    box-shadow: 0 0 10px {color};">
                         </div>
-                        <small style="color: #888;">Left Eye</small>
                     </div>
-                    <div style="flex: 1;">
-                        <div style="background: """ + ("#2ecc71" if right_detected else "#e74c3c") + """; 
-                                    height: 8px; 
-                                    border-radius: 4px;
-                                    box-shadow: 0 0 10px """ + ("#2ecc71" if right_detected else "#e74c3c") + """;">
-                        </div>
-                        <small style="color: #888;">Right Eye</small>
-                    </div>
+                    <small style="color: #888;">{distance:.1f} pixels</small>
                 </div>
             </div>
             """, unsafe_allow_html=True)
-            
-            # Looking at Camera Status
-            looking_status = "status-active" if tracking_info['looking_at_camera'] else "status-warning"
+        
+        with col2:
+            # Blink counter with animation
+            blinks = tracking_info.get('total_blinks', 0)
             st.markdown(f"""
             <div class="status-card">
-                <span class="status-indicator {looking_status}"></span>
-                <strong>Gaze:</strong> {'Looking at Camera ✅' if tracking_info['looking_at_camera'] else 'Not Looking at Camera ↗️'}
+                <strong>Total Blinks</strong>
+                <div style="font-size: 2rem; 
+                            font-weight: bold; 
+                            color: #667eea;
+                            text-align: center;
+                            margin: 0.5rem 0;
+                            text-shadow: 0 0 20px rgba(102, 126, 234, 0.5);">
+                    {blinks}
+                </div>
             </div>
             """, unsafe_allow_html=True)
+        
+        # Eye Aspect Ratios with visual indicators
+        if left_detected or right_detected:
+            st.markdown("""<div class="status-card"><strong>📊 Eye Metrics</strong></div>""", unsafe_allow_html=True)
             
-            # Metrics with modern design
-            col1, col2 = st.columns(2)
+            ear_col1, ear_col2 = st.columns(2)
             
-            with col1:
-                # Distance metric with progress bar
-                distance = tracking_info['center_distance']
-                max_distance = 200  # Maximum expected distance
-                progress = min(100, (distance / max_distance) * 100)
-                color = "#2ecc71" if distance < self.face_tracker.center_threshold else "#e74c3c"
-                
-                st.markdown(f"""
-                <div class="status-card">
-                    <strong>Distance from Center</strong>
-                    <div style="margin: 0.5rem 0;">
+            with ear_col1:
+                if left_detected:
+                    left_ear = tracking_info.get('left_ear', 0)
+                    ear_percent = (left_ear / 0.5) * 100  # Assuming max EAR of 0.5
+                    color = "#2ecc71" if left_ear > self.face_tracker.EAR_THRESHOLD else "#e74c3c"
+                    
+                    st.markdown(f"""
+                    <div style="text-align: center;">
+                        <div style="position: relative; 
+                                    width: 80px; 
+                                    height: 80px; 
+                                    margin: 0 auto;">
+                            <svg viewBox="0 0 36 36" style="transform: rotate(-90deg);">
+                                <path d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"
+                                      fill="none"
+                                      stroke="rgba(255, 255, 255, 0.1)"
+                                      stroke-width="3"></path>
+                                <path d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"
+                                      fill="none"
+                                      stroke="{color}"
+                                      stroke-width="3"
+                                      stroke-dasharray="{ear_percent}, 100"
+                                      style="filter: drop-shadow(0 0 5px {color});"></path>
+                            </svg>
+                            <div style="position: absolute; 
+                                        top: 50%; 
+                                        left: 50%; 
+                                        transform: translate(-50%, -50%);
+                                        font-weight: bold;
+                                        color: {color};">
+                                {left_ear:.2f}
+                            </div>
+                        </div>
+                        <small style="color: #888;">Left EAR</small>
+                    </div>
+                    """, unsafe_allow_html=True)
+            
+            with ear_col2:
+                if right_detected:
+                    right_ear = tracking_info.get('right_ear', 0)
+                    ear_percent = (right_ear / 0.5) * 100
+                    color = "#2ecc71" if right_ear > self.face_tracker.EAR_THRESHOLD else "#e74c3c"
+                    
+                    st.markdown(f"""
+                    <div style="text-align: center;">
+                        <div style="position: relative; 
+                                    width: 80px; 
+                                    height: 80px; 
+                                    margin: 0 auto;">
+                            <svg viewBox="0 0 36 36" style="transform: rotate(-90deg);">
+                                <path d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"
+                                      fill="none"
+                                      stroke="rgba(255, 255, 255, 0.1)"
+                                      stroke-width="3"></path>
+                                <path d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"
+                                      fill="none"
+                                      stroke="{color}"
+                                      stroke-width="3"
+                                      stroke-dasharray="{ear_percent}, 100"
+                                      style="filter: drop-shadow(0 0 5px {color});"></path>
+                            </svg>
+                            <div style="position: absolute; 
+                                        top: 50%; 
+                                        left: 50%; 
+                                        transform: translate(-50%, -50%);
+                                        font-weight: bold;
+                                        color: {color};">
+                                {right_ear:.2f}
+                            </div>
+                        </div>
+                        <small style="color: #888;">Right EAR</small>
+                    </div>
+                    """, unsafe_allow_html=True)
+        
+        # Head Orientation with visual gauges
+        if tracking_info['face_detected']:
+            angles = tracking_info['head_angles']
+            
+            st.markdown("""<div class="status-card"><strong>🔄 Head Orientation</strong></div>""", unsafe_allow_html=True)
+            
+            # Create angle visualization
+            angle_cols = st.columns(3)
+            angle_names = ["Pitch", "Yaw", "Roll"]
+            angle_thresholds = [self.face_tracker.pitch_threshold, self.face_tracker.yaw_threshold, 180]
+            
+            for i, (col, angle, name, threshold) in enumerate(zip(angle_cols, angles, angle_names, angle_thresholds)):
+                with col:
+                    normalized = (abs(angle) / threshold) * 100
+                    color = "#2ecc71" if abs(angle) < threshold else "#e74c3c"
+                    
+                    st.markdown(f"""
+                    <div style="text-align: center;">
+                        <strong style="color: #888;">{name}</strong>
+                        <div style="margin: 0.5rem 0; 
+                                    font-size: 1.5rem; 
+                                    font-weight: bold;
+                                    color: {color};
+                                    text-shadow: 0 0 10px {color};">
+                            {angle:.1f}°
+                        </div>
                         <div style="background: rgba(255, 255, 255, 0.1); 
-                                    height: 20px; 
-                                    border-radius: 10px; 
+                                    height: 5px; 
+                                    border-radius: 3px; 
                                     overflow: hidden;">
                             <div style="background: {color}; 
-                                        width: {progress}%; 
+                                        width: {min(100, normalized)}%; 
                                         height: 100%;
-                                        transition: width 0.3s ease;
-                                        box-shadow: 0 0 10px {color};">
+                                        box-shadow: 0 0 5px {color};">
                             </div>
                         </div>
-                        <small style="color: #888;">{distance:.1f} pixels</small>
                     </div>
-                </div>
-                """, unsafe_allow_html=True)
-            
-            with col2:
-                # Blink counter with animation
-                blinks = tracking_info.get('total_blinks', 0)
-                st.markdown(f"""
-                <div class="status-card">
-                    <strong>Total Blinks</strong>
-                    <div style="font-size: 2rem; 
-                                font-weight: bold; 
-                                color: #667eea;
-                                text-align: center;
-                                margin: 0.5rem 0;
-                                text-shadow: 0 0 20px rgba(102, 126, 234, 0.5);">
-                        {blinks}
-                    </div>
-                </div>
-                """, unsafe_allow_html=True)
-            
-            # Eye Aspect Ratios with visual indicators
-            if left_detected or right_detected:
-                st.markdown("""<div class="status-card"><strong>📊 Eye Metrics</strong></div>""", unsafe_allow_html=True)
-                
-                ear_col1, ear_col2 = st.columns(2)
-                
-                with ear_col1:
-                    if left_detected:
-                        left_ear = tracking_info.get('left_ear', 0)
-                        ear_percent = (left_ear / 0.5) * 100  # Assuming max EAR of 0.5
-                        color = "#2ecc71" if left_ear > self.face_tracker.EAR_THRESHOLD else "#e74c3c"
-                        
-                        st.markdown(f"""
-                        <div style="text-align: center;">
-                            <div style="position: relative; 
-                                        width: 80px; 
-                                        height: 80px; 
-                                        margin: 0 auto;">
-                                <svg viewBox="0 0 36 36" style="transform: rotate(-90deg);">
-                                    <path d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"
-                                          fill="none"
-                                          stroke="rgba(255, 255, 255, 0.1)"
-                                          stroke-width="3"></path>
-                                    <path d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"
-                                          fill="none"
-                                          stroke="{color}"
-                                          stroke-width="3"
-                                          stroke-dasharray="{ear_percent}, 100"
-                                          style="filter: drop-shadow(0 0 5px {color});"></path>
-                                </svg>
-                                <div style="position: absolute; 
-                                            top: 50%; 
-                                            left: 50%; 
-                                            transform: translate(-50%, -50%);
-                                            font-weight: bold;
-                                            color: {color};">
-                                    {left_ear:.2f}
-                                </div>
-                            </div>
-                            <small style="color: #888;">Left EAR</small>
-                        </div>
-                        """, unsafe_allow_html=True)
-                
-                with ear_col2:
-                    if right_detected:
-                        right_ear = tracking_info.get('right_ear', 0)
-                        ear_percent = (right_ear / 0.5) * 100
-                        color = "#2ecc71" if right_ear > self.face_tracker.EAR_THRESHOLD else "#e74c3c"
-                        
-                        st.markdown(f"""
-                        <div style="text-align: center;">
-                            <div style="position: relative; 
-                                        width: 80px; 
-                                        height: 80px; 
-                                        margin: 0 auto;">
-                                <svg viewBox="0 0 36 36" style="transform: rotate(-90deg);">
-                                    <path d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"
-                                          fill="none"
-                                          stroke="rgba(255, 255, 255, 0.1)"
-                                          stroke-width="3"></path>
-                                    <path d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"
-                                          fill="none"
-                                          stroke="{color}"
-                                          stroke-width="3"
-                                          stroke-dasharray="{ear_percent}, 100"
-                                          style="filter: drop-shadow(0 0 5px {color});"></path>
-                                </svg>
-                                <div style="position: absolute; 
-                                            top: 50%; 
-                                            left: 50%; 
-                                            transform: translate(-50%, -50%);
-                                            font-weight: bold;
-                                            color: {color};">
-                                    {right_ear:.2f}
-                                </div>
-                            </div>
-                            <small style="color: #888;">Right EAR</small>
-                        </div>
-                        """, unsafe_allow_html=True)
-            
-            # Head Orientation with visual gauges
-            if tracking_info['face_detected']:
-                angles = tracking_info['head_angles']
-                
-                st.markdown("""<div class="status-card"><strong>🔄 Head Orientation</strong></div>""", unsafe_allow_html=True)
-                
-                # Create angle visualization
-                angle_cols = st.columns(3)
-                angle_names = ["Pitch", "Yaw", "Roll"]
-                angle_thresholds = [self.face_tracker.pitch_threshold, self.face_tracker.yaw_threshold, 180]
-                
-                for i, (col, angle, name, threshold) in enumerate(zip(angle_cols, angles, angle_names, angle_thresholds)):
-                    with col:
-                        normalized = (abs(angle) / threshold) * 100
-                        color = "#2ecc71" if abs(angle) < threshold else "#e74c3c"
-                        
-                        st.markdown(f"""
-                        <div style="text-align: center;">
-                            <strong style="color: #888;">{name}</strong>
-                            <div style="margin: 0.5rem 0; 
-                                        font-size: 1.5rem; 
-                                        font-weight: bold;
-                                        color: {color};
-                                        text-shadow: 0 0 10px {color};">
-                                {angle:.1f}°
-                            </div>
-                            <div style="background: rgba(255, 255, 255, 0.1); 
-                                        height: 5px; 
-                                        border-radius: 3px; 
-                                        overflow: hidden;">
-                                <div style="background: {color}; 
-                                            width: {min(100, normalized)}%; 
-                                            height: 100%;
-                                            box-shadow: 0 0 5px {color};">
-                                </div>
-                            </div>
-                        </div>
-                        """, unsafe_allow_html=True)
+                    """, unsafe_allow_html=True)
     
     def update_analytics(self, placeholder):
         """Update analytics display with enhanced visualizations"""
@@ -1626,200 +1743,207 @@ Available backends: {[cv2.videoio_registry.getBackendName(b) for b in cv2.videoi
             return
         
         with placeholder.container():
-            # Convert tracking data to DataFrame
-            df_data = []
-            for data in list(self.face_tracker.tracking_data)[-60:]:  # Last 2 seconds
-                df_data.append({
-                    'timestamp': data['timestamp'],
-                    'face_detected': data['face_detected'],
-                    'is_centered': data['is_centered'],
-                    'looking_at_camera': data['looking_at_camera'],
-                    'center_distance': data['center_distance'],
-                    'left_eye_detected': data.get('left_eye_detected', False),
-                    'right_eye_detected': data.get('right_eye_detected', False),
-                    'left_ear': data.get('left_ear', 0),
-                    'right_ear': data.get('right_ear', 0),
-                    'is_blinking': data.get('is_blinking', False)
-                })
+            self._display_analytics_content()
+    
+    def _display_analytics_content(self):
+        """Display analytics content without placeholder wrapper"""
+        if len(self.face_tracker.tracking_data) < 2:
+            return
             
-            df = pd.DataFrame(df_data)
+        # Convert tracking data to DataFrame
+        df_data = []
+        for data in list(self.face_tracker.tracking_data)[-60:]:  # Last 2 seconds
+            df_data.append({
+                'timestamp': data['timestamp'],
+                'face_detected': data['face_detected'],
+                'is_centered': data['is_centered'],
+                'looking_at_camera': data['looking_at_camera'],
+                'center_distance': data['center_distance'],
+                'left_eye_detected': data.get('left_eye_detected', False),
+                'right_eye_detected': data.get('right_eye_detected', False),
+                'left_ear': data.get('left_ear', 0),
+                'right_ear': data.get('right_ear', 0),
+                'is_blinking': data.get('is_blinking', False)
+            })
+        
+        df = pd.DataFrame(df_data)
+        
+        if not df.empty:
+            # Calculate percentages
+            face_detection_rate = df['face_detected'].mean() * 100
+            centered_rate = df['is_centered'].mean() * 100
+            attention_rate = df['looking_at_camera'].mean() * 100
+            both_eyes_rate = (df['left_eye_detected'] & df['right_eye_detected']).mean() * 100
             
-            if not df.empty:
-                # Calculate percentages
-                face_detection_rate = df['face_detected'].mean() * 100
-                centered_rate = df['is_centered'].mean() * 100
-                attention_rate = df['looking_at_camera'].mean() * 100
-                both_eyes_rate = (df['left_eye_detected'] & df['right_eye_detected']).mean() * 100
-                
-                # Display metrics with enhanced visuals
-                st.markdown("""
-                <div style="background: rgba(255, 255, 255, 0.05); 
-                           backdrop-filter: blur(10px); 
-                           border-radius: 15px; 
-                           padding: 1rem; 
-                           margin-bottom: 1rem;
-                           border: 1px solid rgba(255, 255, 255, 0.1);">
-                    <strong style="color: white;">📊 Performance Metrics</strong>
-                </div>
-                """, unsafe_allow_html=True)
-                
-                # Create circular progress indicators
-                col1, col2, col3, col4 = st.columns(4)
-                
-                metrics = [
-                    (col1, "Face Detection", face_detection_rate, "#3498db"),
-                    (col2, "Centered", centered_rate, "#2ecc71"),
-                    (col3, "Attention", attention_rate, "#f39c12"),
-                    (col4, "Both Eyes", both_eyes_rate, "#9b59b6")
-                ]
-                
-                for col, label, value, color in metrics:
-                    with col:
-                        st.markdown(f"""
-                        <div style="text-align: center;">
-                            <div style="position: relative; width: 100px; height: 100px; margin: 0 auto;">
-                                <svg viewBox="0 0 36 36" style="transform: rotate(-90deg);">
-                                    <path d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"
-                                          fill="none"
-                                          stroke="rgba(255, 255, 255, 0.1)"
-                                          stroke-width="3"></path>
-                                    <path d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"
-                                          fill="none"
-                                          stroke="{color}"
-                                          stroke-width="3"
-                                          stroke-dasharray="{value}, 100"
-                                          style="filter: drop-shadow(0 0 10px {color});
-                                                 animation: pulse 2s ease-in-out infinite;"></path>
-                                </svg>
-                                <div style="position: absolute; 
-                                            top: 50%; 
-                                            left: 50%; 
-                                            transform: translate(-50%, -50%);">
-                                    <div style="font-size: 1.5rem; 
-                                                font-weight: bold; 
-                                                color: {color};
-                                                text-shadow: 0 0 10px {color};">
-                                        {value:.0f}%
-                                    </div>
+            # Display metrics with enhanced visuals
+            st.markdown("""
+            <div style="background: rgba(255, 255, 255, 0.05); 
+                       backdrop-filter: blur(10px); 
+                       border-radius: 15px; 
+                       padding: 1rem; 
+                       margin-bottom: 1rem;
+                       border: 1px solid rgba(255, 255, 255, 0.1);">
+                <strong style="color: white;">📊 Performance Metrics</strong>
+            </div>
+            """, unsafe_allow_html=True)
+            
+            # Create circular progress indicators
+            col1, col2, col3, col4 = st.columns(4)
+            
+            metrics = [
+                (col1, "Face Detection", face_detection_rate, "#3498db"),
+                (col2, "Centered", centered_rate, "#2ecc71"),
+                (col3, "Attention", attention_rate, "#f39c12"),
+                (col4, "Both Eyes", both_eyes_rate, "#9b59b6")
+            ]
+            
+            for col, label, value, color in metrics:
+                with col:
+                    st.markdown(f"""
+                    <div style="text-align: center;">
+                        <div style="position: relative; width: 100px; height: 100px; margin: 0 auto;">
+                            <svg viewBox="0 0 36 36" style="transform: rotate(-90deg);">
+                                <path d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"
+                                      fill="none"
+                                      stroke="rgba(255, 255, 255, 0.1)"
+                                      stroke-width="3"></path>
+                                <path d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"
+                                      fill="none"
+                                      stroke="{color}"
+                                      stroke-width="3"
+                                      stroke-dasharray="{value}, 100"
+                                      style="filter: drop-shadow(0 0 10px {color});
+                                             animation: pulse 2s ease-in-out infinite;"></path>
+                            </svg>
+                            <div style="position: absolute; 
+                                        top: 50%; 
+                                        left: 50%; 
+                                        transform: translate(-50%, -50%);">
+                                <div style="font-size: 1.5rem; 
+                                            font-weight: bold; 
+                                            color: {color};
+                                            text-shadow: 0 0 10px {color};">
+                                    {value:.0f}%
                                 </div>
                             </div>
-                            <p style="color: #888; margin-top: 0.5rem; font-size: 0.9rem;">{label}</p>
                         </div>
-                        """, unsafe_allow_html=True)
+                        <p style="color: #888; margin-top: 0.5rem; font-size: 0.9rem;">{label}</p>
+                    </div>
+                    """, unsafe_allow_html=True)
+            
+            # Eye tracking chart with modern styling
+            if len(df) > 1 and (df['left_ear'].sum() > 0 or df['right_ear'].sum() > 0):
+                fig_eyes = go.Figure()
                 
-                # Eye tracking chart with modern styling
-                if len(df) > 1 and (df['left_ear'].sum() > 0 or df['right_ear'].sum() > 0):
-                    fig_eyes = go.Figure()
-                    
-                    # Add traces with gradient effect
-                    fig_eyes.add_trace(go.Scatter(
-                        x=df['timestamp'],
-                        y=df['left_ear'],
-                        mode='lines',
-                        name='Left Eye',
-                        line=dict(color='#3498db', width=3),
-                        fill='tozeroy',
-                        fillcolor='rgba(52, 152, 219, 0.1)'
-                    ))
-                    
-                    fig_eyes.add_trace(go.Scatter(
-                        x=df['timestamp'],
-                        y=df['right_ear'],
-                        mode='lines',
-                        name='Right Eye',
-                        line=dict(color='#2ecc71', width=3),
-                        fill='tozeroy',
-                        fillcolor='rgba(46, 204, 113, 0.1)'
-                    ))
-                    
-                    # Add threshold line with animation
-                    fig_eyes.add_hline(
-                        y=self.face_tracker.EAR_THRESHOLD,
-                        line_dash="dash",
-                        line_color="#e74c3c",
-                        line_width=2,
-                        annotation_text="Blink Threshold",
-                        annotation_position="top right",
-                        annotation_font_color="#e74c3c"
-                    )
-                    
-                    fig_eyes.update_layout(
-                        title={
-                            'text': 'Eye Aspect Ratio (EAR) Over Time',
-                            'font': {'color': 'white', 'size': 16}
-                        },
-                        xaxis_title='Time',
-                        yaxis_title='EAR Value',
-                        height=250,
-                        margin=dict(l=0, r=0, t=40, b=0),
-                        plot_bgcolor='rgba(0,0,0,0)',
-                        paper_bgcolor='rgba(0,0,0,0)',
-                        xaxis={'gridcolor': 'rgba(255,255,255,0.1)', 'color': 'white'},
-                        yaxis={'gridcolor': 'rgba(255,255,255,0.1)', 'color': 'white'},
-                        showlegend=True,
-                        legend=dict(
-                            bgcolor='rgba(0,0,0,0)',
-                            font=dict(color='white')
-                        ),
-                        hovermode='x unified'
-                    )
-                    
-                    st.plotly_chart(fig_eyes, use_container_width=True, config={'displayModeBar': False})
+                # Add traces with gradient effect
+                fig_eyes.add_trace(go.Scatter(
+                    x=df['timestamp'],
+                    y=df['left_ear'],
+                    mode='lines',
+                    name='Left Eye',
+                    line=dict(color='#3498db', width=3),
+                    fill='tozeroy',
+                    fillcolor='rgba(52, 152, 219, 0.1)'
+                ))
                 
-                # Distance chart with enhanced styling
-                if len(df) > 1:
-                    fig_dist = go.Figure()
-                    
-                    # Create gradient effect for distance
-                    fig_dist.add_trace(go.Scatter(
-                        x=df['timestamp'],
-                        y=df['center_distance'],
-                        mode='lines',
-                        name='Distance',
-                        line=dict(
-                            color='#667eea',
-                            width=3
-                        ),
-                        fill='tozeroy',
-                        fillcolor='rgba(102, 126, 234, 0.1)'
-                    ))
-                    
-                    # Add threshold area
-                    fig_dist.add_hrect(
-                        y0=0, y1=self.face_tracker.center_threshold,
-                        fillcolor="rgba(46, 204, 113, 0.1)",
-                        layer="below",
-                        line_width=0,
-                    )
-                    
-                    fig_dist.add_hline(
-                        y=self.face_tracker.center_threshold,
-                        line_dash="dash",
-                        line_color="#f39c12",
-                        line_width=2,
-                        annotation_text="Center Threshold",
-                        annotation_position="top right",
-                        annotation_font_color="#f39c12"
-                    )
-                    
-                    fig_dist.update_layout(
-                        title={
-                            'text': 'Distance from Center Over Time',
-                            'font': {'color': 'white', 'size': 16}
-                        },
-                        xaxis_title='Time',
-                        yaxis_title='Distance (px)',
-                        height=200,
-                        margin=dict(l=0, r=0, t=40, b=0),
-                        plot_bgcolor='rgba(0,0,0,0)',
-                        paper_bgcolor='rgba(0,0,0,0)',
-                        xaxis={'gridcolor': 'rgba(255,255,255,0.1)', 'color': 'white'},
-                        yaxis={'gridcolor': 'rgba(255,255,255,0.1)', 'color': 'white'},
-                        showlegend=False,
-                        hovermode='x unified'
-                    )
-                    
-                    st.plotly_chart(fig_dist, use_container_width=True, config={'displayModeBar': False})
+                fig_eyes.add_trace(go.Scatter(
+                    x=df['timestamp'],
+                    y=df['right_ear'],
+                    mode='lines',
+                    name='Right Eye',
+                    line=dict(color='#2ecc71', width=3),
+                    fill='tozeroy',
+                    fillcolor='rgba(46, 204, 113, 0.1)'
+                ))
+                
+                # Add threshold line with animation
+                fig_eyes.add_hline(
+                    y=self.face_tracker.EAR_THRESHOLD,
+                    line_dash="dash",
+                    line_color="#e74c3c",
+                    line_width=2,
+                    annotation_text="Blink Threshold",
+                    annotation_position="top right",
+                    annotation_font_color="#e74c3c"
+                )
+                
+                fig_eyes.update_layout(
+                    title={
+                        'text': 'Eye Aspect Ratio (EAR) Over Time',
+                        'font': {'color': 'white', 'size': 16}
+                    },
+                    xaxis_title='Time',
+                    yaxis_title='EAR Value',
+                    height=250,
+                    margin=dict(l=0, r=0, t=40, b=0),
+                    plot_bgcolor='rgba(0,0,0,0)',
+                    paper_bgcolor='rgba(0,0,0,0)',
+                    xaxis={'gridcolor': 'rgba(255,255,255,0.1)', 'color': 'white'},
+                    yaxis={'gridcolor': 'rgba(255,255,255,0.1)', 'color': 'white'},
+                    showlegend=True,
+                    legend=dict(
+                        bgcolor='rgba(0,0,0,0)',
+                        font=dict(color='white')
+                    ),
+                    hovermode='x unified'
+                )
+                
+                st.plotly_chart(fig_eyes, use_container_width=True, config={'displayModeBar': False})
+            
+            # Distance chart with enhanced styling
+            if len(df) > 1:
+                fig_dist = go.Figure()
+                
+                # Create gradient effect for distance
+                fig_dist.add_trace(go.Scatter(
+                    x=df['timestamp'],
+                    y=df['center_distance'],
+                    mode='lines',
+                    name='Distance',
+                    line=dict(
+                        color='#667eea',
+                        width=3
+                    ),
+                    fill='tozeroy',
+                    fillcolor='rgba(102, 126, 234, 0.1)'
+                ))
+                
+                # Add threshold area
+                fig_dist.add_hrect(
+                    y0=0, y1=self.face_tracker.center_threshold,
+                    fillcolor="rgba(46, 204, 113, 0.1)",
+                    layer="below",
+                    line_width=0,
+                )
+                
+                fig_dist.add_hline(
+                    y=self.face_tracker.center_threshold,
+                    line_dash="dash",
+                    line_color="#f39c12",
+                    line_width=2,
+                    annotation_text="Center Threshold",
+                    annotation_position="top right",
+                    annotation_font_color="#f39c12"
+                )
+                
+                fig_dist.update_layout(
+                    title={
+                        'text': 'Distance from Center Over Time',
+                        'font': {'color': 'white', 'size': 16}
+                    },
+                    xaxis_title='Time',
+                    yaxis_title='Distance (px)',
+                    height=200,
+                    margin=dict(l=0, r=0, t=40, b=0),
+                    plot_bgcolor='rgba(0,0,0,0)',
+                    paper_bgcolor='rgba(0,0,0,0)',
+                    xaxis={'gridcolor': 'rgba(255,255,255,0.1)', 'color': 'white'},
+                    yaxis={'gridcolor': 'rgba(255,255,255,0.1)', 'color': 'white'},
+                    showlegend=False,
+                    hovermode='x unified'
+                )
+                
+                st.plotly_chart(fig_dist, use_container_width=True, config={'displayModeBar': False})
     
     def save_session_analytics(self):
         """Save current session analytics when tracking stops"""
