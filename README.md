@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 # 👁️ Face & Eye Tracking System
 
 A real-time face and eye tracking application built with Python, Streamlit, and MediaPipe. This system provides advanced facial monitoring capabilities with eye movement detection, blink counting, and comprehensive analytics.
@@ -205,3 +206,7 @@ Project Link: [https://github.com/Div-9898/face-eye-tracking-system](https://git
 ---
 
 <p align="center">Made with ❤️ using Python and Streamlit</p> 
+=======
+# face-eye-tracking-system
+face-eye-tracking-system
+>>>>>>> 2786924ce32a9e77414b8750327b20998fafd7df
