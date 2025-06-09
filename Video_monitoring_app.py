@@ -4,6 +4,7 @@ import numpy as np
 import mediapipe as mp
 import math
 import time
+import sys
 from datetime import datetime
 import pandas as pd
 import plotly.graph_objects as go
@@ -774,16 +775,22 @@ class StreamlitApp:
                             try:
                                 cap = cv2.VideoCapture(0)
                                 if cap.isOpened():
+                                    # Test reading a frame to ensure it's working
+                                    ret, frame = cap.read()
                                     cap.release()
-                                    st.session_state.camera_permission = True
-                                    st.session_state.show_permission_popup = False
-                                    st.success("✅ Camera detected! Loading...")
-                                    time.sleep(0.5)
-                                    st.rerun()
+                                    if ret:
+                                        st.session_state.camera_permission = True
+                                        st.session_state.show_permission_popup = False
+                                        st.session_state.camera_tested = True  # Mark as tested
+                                        st.success("✅ Camera detected! Loading...")
+                                        time.sleep(0.5)
+                                        st.rerun()
+                                    else:
+                                        st.error("Camera opened but couldn't read frames. Please use the camera button above.")
                                 else:
                                     st.error("Camera not accessible. Please use the camera button above.")
-                            except:
-                                st.error("Camera error. Please use the camera button above.")
+                            except Exception as e:
+                                st.error(f"Camera error: {str(e)}. Please use the camera button above.")
                     
                     with col_b:
                         if st.button("💻 Continue without camera", use_container_width=True):
@@ -899,6 +906,20 @@ class StreamlitApp:
                 
                 st.info("💡 Debug info shows FPS, blink count, and eye detection status")
             
+            # Camera settings
+            with st.expander("📷 Camera Settings", expanded=False):
+                require_test = st.checkbox("Require camera test before tracking", 
+                                         value=st.session_state.get('require_camera_test', True),
+                                         key="require_camera_test",
+                                         help="When enabled, you'll need to take a test photo before tracking starts")
+                
+                if st.button("🔄 Reset Camera Permission", use_container_width=True):
+                    if 'camera_tested' in st.session_state:
+                        del st.session_state.camera_tested
+                    st.success("Camera permission reset. You'll be asked to test camera next time.")
+                
+                st.info("💡 Disable camera test if you're having issues with repeated permission prompts")
+            
             # Data export
             with st.expander("💾 Data Export", expanded=False):
                 if st.button("📥 Export Current Data", use_container_width=True):
@@ -948,6 +969,9 @@ class StreamlitApp:
                            use_container_width=True, key="stop_btn"):
                     self.save_session_analytics()
                     st.session_state.tracking_active = False
+                    # Reset camera test flag so it can be tested again next time
+                    if 'camera_tested' in st.session_state:
+                        del st.session_state.camera_tested
                     st.rerun()
             
             with col3:
@@ -1048,25 +1072,116 @@ class StreamlitApp:
     
     def run_tracking_loop(self, camera_placeholder, status_placeholder, analytics_placeholder):
         """Main tracking loop"""
-        # Try different camera indices for better compatibility
-        cap = None
-        for camera_index in [0, 1, 2]:
-            try:
-                cap = cv2.VideoCapture(camera_index, cv2.CAP_DSHOW)  # Use DirectShow on Windows
-                if cap.isOpened():
-                    break
-            except:
-                continue
+        # First, try to test camera access with Streamlit's camera_input if required
+        # This ensures browser permissions are properly set
+        require_test = st.session_state.get('require_camera_test', True)
         
-        if cap is None or not cap.isOpened():
-            # Try without DirectShow
-            cap = cv2.VideoCapture(0)
+        if require_test and 'camera_tested' not in st.session_state:
+            with camera_placeholder.container():
+                st.info("🎥 Initializing camera access...")
+                
+                # Check if we should skip the camera test
+                skip_test = st.checkbox("Skip camera test (I know my camera is working)", key="skip_camera_test")
+                
+                if skip_test:
+                    st.session_state.camera_tested = True
+                    st.rerun()
+                else:
+                    # Use camera_input to ensure browser permissions
+                    st.markdown("### 📸 Quick Camera Test")
+                    st.info("Take a quick photo to confirm camera access. This ensures your browser has granted camera permissions.")
+                    
+                    test_image = st.camera_input("Click to test camera", key="dashboard_camera_test")
+                    if test_image is not None:
+                        st.session_state.camera_tested = True
+                        st.success("✅ Camera access confirmed! Starting tracking...")
+                        time.sleep(0.5)
+                        st.rerun()
+                    else:
+                        st.warning("⚠️ Waiting for camera test...")
+                        
+                        # Provide alternative option
+                        if st.button("🚀 Skip and try anyway", key="skip_test_button"):
+                            st.session_state.camera_tested = True
+                            st.rerun()
+                    return
+        
+        # Now try to open camera with OpenCV
+        cap = None
+        camera_opened = False
+        
+        # Try different methods to open camera
+        for method in ['default', 'dshow', 'msmf']:
+            for camera_index in [0, 1, 2]:
+                try:
+                    if method == 'default':
+                        cap = cv2.VideoCapture(camera_index)
+                    elif method == 'dshow' and sys.platform == 'win32':
+                        cap = cv2.VideoCapture(camera_index, cv2.CAP_DSHOW)
+                    elif method == 'msmf' and sys.platform == 'win32':
+                        cap = cv2.VideoCapture(camera_index, cv2.CAP_MSMF)
+                    else:
+                        continue
+                    
+                    if cap.isOpened():
+                        # Test if we can actually read frames
+                        ret, test_frame = cap.read()
+                        if ret and test_frame is not None:
+                            camera_opened = True
+                            break
+                        else:
+                            cap.release()
+                except Exception as e:
+                    if cap:
+                        cap.release()
+                    continue
             
-        if not cap.isOpened():
-            st.error("Could not access camera. Please check:")
-            st.error("1. Camera permissions are granted")
-            st.error("2. No other application is using the camera")
-            st.error("3. Camera drivers are properly installed")
+            if camera_opened:
+                break
+        
+        if not camera_opened:
+            # Provide detailed error message with troubleshooting steps
+            with camera_placeholder.container():
+                st.error("🚫 Could not access camera for video capture")
+                
+                st.markdown("""
+                ### 🔧 Troubleshooting Steps:
+                
+                1. **Close other applications** using the camera (Zoom, Teams, Skype, etc.)
+                
+                2. **Refresh the page** and try again
+                
+                3. **Check Windows Camera Privacy Settings**:
+                   - Open Windows Settings → Privacy → Camera
+                   - Ensure "Allow apps to access your camera" is ON
+                   - Ensure Python/your browser has permission
+                
+                4. **Try the manual camera test**:
+                """)
+                
+                if st.button("🎥 Run Camera Test", key="manual_camera_test"):
+                    # Clear the camera_tested flag to retry
+                    if 'camera_tested' in st.session_state:
+                        del st.session_state.camera_tested
+                    st.rerun()
+                
+                st.markdown("""
+                5. **Alternative: Use the test script**:
+                   ```bash
+                   python test_camera.py
+                   ```
+                   
+                If the test script works but this doesn't, it may be a Streamlit-specific issue.
+                """)
+                
+                # Show system info for debugging
+                with st.expander("🔍 System Information"):
+                    st.code(f"""
+Platform: {sys.platform}
+Python: {sys.version}
+OpenCV: {cv2.__version__}
+Available backends: {[cv2.videoio_registry.getBackendName(b) for b in cv2.videoio_registry.getBackends()]}
+                    """)
             return
         
         # Set camera properties for better performance
